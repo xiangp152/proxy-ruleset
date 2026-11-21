@@ -174,24 +174,44 @@ def parse_lines(content: str, behavior: str, source_name: str) -> list[tuple[str
     return items
 
 
-def check_conflicts(compiled: dict[str, list[tuple[str, str]]]) -> None:
-    direct_set = {m for m, _ in compiled.get("custom-direct", [])}
-    for group in ("custom-proxy", "custom-ai", "custom-reject"):
-        overlap = direct_set & {m for m, _ in compiled.get(group, [])}
-        if overlap:
-            sample = ", ".join(sorted(overlap)[:10])
-            raise RuntimeError(
-                f"Rule conflict between 'custom-direct' and '{group}': {sample}"
-            )
+def domain_patterns_overlap(
+    left: list[str], left_suffix: bool, right: list[str], right_suffix: bool
+) -> bool:
+    """Compare reversed labels for exact, suffix and single-label wildcard rules."""
+    if (len(left) < len(right) and not left_suffix) or (
+        len(right) < len(left) and not right_suffix
+    ):
+        return False
+    return all(a == b or a == "*" or b == "*" for a, b in zip(left, right))
 
-    reject_set = {m for m, _ in compiled.get("custom-reject", [])}
-    for group in ("custom-proxy", "custom-ai"):
-        overlap = reject_set & {m for m, _ in compiled.get(group, [])}
-        if overlap:
-            sample = ", ".join(sorted(overlap)[:10])
-            raise RuntimeError(
-                f"Rule conflict between 'custom-reject' and '{group}': {sample}"
-            )
+
+def check_conflicts(compiled: dict[str, list[tuple[str, str]]]) -> None:
+    proxy_groups = ("custom-proxy", "custom-ai")
+    incompatible = {
+        "custom-direct": (*proxy_groups, "custom-reject"),
+        "private": (*proxy_groups, "custom-reject"),
+        "custom-reject": proxy_groups,
+    }
+    patterns = {}
+    for group in (*incompatible, *proxy_groups):
+        # Shadowrocket's output maps both "+." and "." to DOMAIN-SUFFIX.
+        # Check the apex too, since a conflict on either client matters.
+        patterns[group] = []
+        for rule, sr_rule in sorted(compiled.get(group, [])):
+            kind, domain = sr_rule.split(",", 1)
+            patterns[group].append((rule, domain.split(".")[::-1], kind == "DOMAIN-SUFFIX"))
+
+    for first_group, other_groups in incompatible.items():
+        for second_group in other_groups:
+            for first_rule, first_labels, first_suffix in patterns[first_group]:
+                for second_rule, second_labels, second_suffix in patterns[second_group]:
+                    if domain_patterns_overlap(
+                        first_labels, first_suffix, second_labels, second_suffix
+                    ):
+                        raise RuntimeError(
+                            f"Rule conflict between '{first_group}' ({first_rule}) "
+                            f"and '{second_group}' ({second_rule})"
+                        )
 
 
 def find_mihomo_bin(explicit: str | None) -> str | None:
@@ -214,14 +234,10 @@ def main() -> int:
         return 1
 
     dist_dir = ROOT / "dist"
-    if dist_dir.exists():
-        shutil.rmtree(dist_dir)
     mihomo_dir = dist_dir / "mihomo"
     sr_dir = dist_dir / "shadowrocket"
     override_dir = dist_dir / "override"
     tpl_dir = dist_dir / "templates"
-    for d in (mihomo_dir, sr_dir, override_dir, tpl_dir):
-        d.mkdir(parents=True, exist_ok=True)
 
     compiled: dict[str, list[tuple[str, str]]] = {}
 
@@ -248,6 +264,11 @@ def main() -> int:
         compiled[name] = sorted(seen.items(), key=lambda kv: kv[0])
 
     check_conflicts(compiled)
+
+    if dist_dir.exists():
+        shutil.rmtree(dist_dir)
+    for d in (mihomo_dir, sr_dir, override_dir, tpl_dir):
+        d.mkdir(parents=True, exist_ok=True)
 
     manifest: dict[str, Any] = {"mrs_compiled": bool(mihomo_bin), "bundles": {}}
 

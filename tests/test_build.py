@@ -1,8 +1,10 @@
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -44,12 +46,60 @@ class BuildTests(unittest.TestCase):
         )
 
     def test_conflict_detection(self) -> None:
-        compiled = {
-            "custom-direct": [("+.example.com", "DOMAIN-SUFFIX,example.com")],
-            "custom-proxy": [("+.example.com", "DOMAIN-SUFFIX,example.com")],
-        }
-        with self.assertRaises(RuntimeError):
-            build.check_conflicts(compiled)
+        cases = [
+            ("custom-direct", "DOMAIN,example.com", "custom-proxy", "DOMAIN,example.com"),
+            ("custom-direct", "DOMAIN-SUFFIX,example.com", "custom-ai", "api.example.com"),
+            ("custom-direct", "api.example.com", "custom-ai", "HOST-SUFFIX,example.com"),
+            ("custom-reject", "+.example.com", "custom-proxy", "+.api.example.com"),
+            ("custom-reject", ".example.com", "custom-ai", "example.com"),
+            ("private", "api.*.example.com", "custom-ai", "+.corp.example.com"),
+        ]
+        for first_group, first_rule, second_group, second_rule in cases:
+            with self.subTest(first_rule=first_rule, second_rule=second_rule):
+                compiled = {
+                    first_group: build.parse_lines(first_rule, "domain", "local"),
+                    second_group: build.parse_lines(second_rule, "domain", "upstream"),
+                }
+                with self.assertRaises(RuntimeError) as error:
+                    build.check_conflicts(compiled)
+                for group, rules in compiled.items():
+                    self.assertIn(f"'{group}' ({rules[0][0]})", str(error.exception))
+
+    def test_conflicts_preserve_label_boundaries_and_ai_priority(self) -> None:
+        build.check_conflicts({
+            "custom-direct": build.parse_lines(
+                "+.example.com\nexact.example.org", "domain", "local"
+            ),
+            "custom-proxy": build.parse_lines(
+                "+.notexample.com\nchild.exact.example.org", "domain", "local"
+            ),
+            "custom-ai": build.parse_lines("api.notexample.com", "domain", "upstream"),
+        })
+
+    def test_online_build_validates_upstream_before_replacing_dist(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "direct.list").write_text("DOMAIN-SUFFIX,example.com\n", encoding="utf-8")
+            (root / "dist").mkdir()
+            previous_build = root / "dist" / "manifest.json"
+            previous_build.write_text("{}", encoding="utf-8")
+            url = "https://example.org/ai.list"
+            sources = {
+                "bundles": [
+                    {"name": "custom-direct", "behavior": "domain", "local": "direct.list"},
+                    {"name": "custom-ai", "behavior": "domain", "upstream": [url]},
+                ]
+            }
+            with (
+                patch.object(build, "ROOT", root),
+                patch.object(build, "load_sources", return_value=sources),
+                patch.object(build, "fetch_url", return_value="api.example.com") as fetch,
+                patch.object(sys, "argv", ["build.py"]),
+            ):
+                with self.assertRaisesRegex(RuntimeError, r"custom-direct.*custom-ai"):
+                    build.main()
+                fetch.assert_called_once_with(url)
+            self.assertEqual(previous_build.read_text(encoding="utf-8"), "{}")
 
     def test_offline_build_outputs(self) -> None:
         proc = subprocess.run(

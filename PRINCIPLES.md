@@ -53,9 +53,11 @@ flowchart TD
 对每个 bundle，构建脚本先读取本地 `local` 文件，再拉取 `upstream` 列表（`--offline` 模式跳过网络拉取），使用字典 `seen.setdefault(m_rule, sr_rule)` 以 Mihomo 规范化键名去重，并按字典序排序输出，确保产物具备确定性（Deterministic）。
 
 #### （3）跨组冲突阻断（`check_conflicts`）
-构建期会执行严格的语义冲突检测，一旦发现同一域名同时存在于互斥策略组中，直接抛出 `RuntimeError` 阻断 CI：
-- `custom-direct` 不允许与 `custom-proxy`、`custom-ai`、`custom-reject` 存在任何交集；
-- `custom-reject` 不允许与 `custom-proxy`、`custom-ai` 存在任何交集。
+构建会检查合并后的本地和上游域名规则。精确域名与域名后缀覆盖到同一个目标时，也会抛出 `RuntimeError` 并报告两条规则及其所属规则集。
+
+- `custom-direct` 和构建时下载的 `private` 各自与 `custom-proxy`、`custom-ai`、`custom-reject` 检查重叠。
+- `custom-reject` 与 `custom-proxy`、`custom-ai` 检查重叠。
+- `custom-ai` 与 `custom-proxy` 重叠时，路由按现有顺序优先匹配 `custom-ai`。客户端直接下载的国内域名库会独立更新。
 
 #### （4）双端编译与分发（`.github/workflows/build.yml`）
 - **Mihomo 端**：CI 下载最新官方 `mihomo` 二进制文件，执行 `mihomo convert-ruleset <behavior> text <txt> <mrs>`，将纯文本编译为二进制 `.mrs` 文件（`dist/mihomo/*.mrs`），加载速度快、内存占用极低。
@@ -98,6 +100,8 @@ flowchart TD
    7. `cn_domain`（Mihomo `cn.mrs` / Shadowrocket `DOMAIN-SET`） → `🎯 全球直连` / `DIRECT`
    8. `cn_ip`（Mihomo `geoip/cn.mrs` / Shadowrocket `GEOIP,CN`，**均带 `no-resolve`**） → `🎯 全球直连` / `DIRECT`
    9. `MATCH,🚀 节点选择` / `FINAL,PROXY`（所有未命中规则的未知流量默认走代理）
+
+   Mihomo 在 `custom_ai`、`custom_proxy` 各自的代理规则后紧跟同规则集的 `REJECT`，并以 `MATCH,REJECT` 收尾。如果所选节点不支持 UDP，内核跳过代理规则后即命中相应的拒绝规则。
 
 ---
 
@@ -186,29 +190,22 @@ sequenceDiagram
 - **iOS 端（Shadowrocket）**：天然工作在 iOS `NEPacketTunnelProvider` 虚拟网卡（TUN）层，全局 TCP 与 UDP 流量默认都会进入小火箭隧道。
 - **桌面 / Android 端（Mihomo）**：`override/mihomo-override.js` 与 `templates/mihomo-base.yaml` **刻意不硬编码覆盖 `tun` 配置段**（交由 Clash Party / FlClash / CMFA 客户端开关统一控制）。因此，**桌面端必须开启客户端的 TUN 模式（接管全局 UDP），且所选机场节点支持 UDP 转发**；如果仅开启 HTTP 系统代理，任何规则集都无法拦截浏览器直出的原生 UDP 报文。
 
-在客户端以 **TUN 模式**（或 Shadowrocket）接管全局流量的前提下，本项目通过以下机制防止外部 RTC 泄露：
+客户端通过 TUN 接管 UDP 后，STUN 流量按配置分流。下图展示 Mihomo 规则模式下的处理路径。
 
 ```mermaid
 flowchart TD
-    RTC["浏览器/应用 WebRTC ICE 探测"] --> Check6{"1. 是否暴露原生 IPv6?"}
-    Check6 -- "Mihomo/SR 均已关闭 IPv6" --> Blocked6["无法获取 IPv6 路由与 AAAA 解析，阻断 IPv6 候选泄露"]
-    Check6 --> CheckUDP{"2. 向外部 STUN/TURN 发 UDP 包"}
-    CheckUDP -- "前提: 桌面端需开启 TUN 模式" --> Route{"3. 匹配项目规则"}
-    Route -- "私有网段 (custom-direct-ip / tun-excluded-routes)" --> LAN["仅局域网/mDNS (.local) 直连"]
-    Route -- "公网境外 STUN IP 或域名" --> Match["跳过 no-resolve 规则 → 命中 MATCH / FINAL"]
-    Match --> ProxyUDP["经代理节点 UDP 转发 → STUN 仅看到节点出口 IP"]
+    RTC["TUN 接管 STUN UDP"] --> Route{"命中哪类规则？"}
+    Route -- "直连" --> Direct["直连，公网服务可见真实出口 IP"]
+    Route -- "拦截" --> Reject["默认拒绝"]
+    Route -- "代理规则或默认代理" --> Node{"所选节点支持 UDP？"}
+    Node -- "支持" --> ProxyUDP["通过所选节点转发"]
+    Node -- "不支持" --> RejectUDP["命中 REJECT"]
 ```
 
-1. **彻底关闭 IPv6，消除原生公网 IPv6 候选与 IPv6 UDP 直出**
-   - Mihomo 端显式配置 `ipv6: false` 与 `dns.ipv6: false`；Shadowrocket 端显式配置 `ipv6 = false` 与 `prefer-ipv6 = false`。
-   - 这样既不会解析出外部 STUN 服务器的 IPv6 地址，也避免本地原生 IPv6 地址被 WebRTC 当作可用候选暴露或绕过 IPv4 代理隧道。
-2. **外部 STUN/TURN 探测流量全量走代理出口（不直连）**
-   - **当 WebRTC 连接公网裸 IP 形式的外部 STUN 服务器时**：项目的直连 IP 规则 `rules/custom-direct-ip.list` 仅放行标准的私有/保留网段（`10.0.0.0/8`、`100.64.0.0/10`、`127.0.0.0/8`、`169.254.0.0/16`、`172.16.0.0/12`、`192.168.0.0/16`、`::1/128`、`fc00::/7`、`fe80::/10`），`cn_ip` / `GEOIP,CN` 仅放行中国大陆 IP。因此所有海外公网 STUN 服务器的 UDP 报文都会穿透直连规则，最终命中兜底规则 `MATCH,🚀 节点选择`（Mihomo）或 `FINAL,PROXY`（Shadowrocket），经代理节点 UDP 转发出去。此时外部 STUN 返回并展示给网页的反射公网 IP 是**代理节点的出口 IP**，而非用户真实宽带 IP。
-   - **当 WebRTC 连接域名形式的外部 STUN 服务器时**：在 `fake-ip`、`proxyDoH`、`dns-direct-system = false` 以及 `no-resolve` 的联合保护下，解析过程同样不会泄露给本地运营商 DNS，最终连接也经代理节点完成。
-3. **局域网与 mDNS 隐私隔离**
-   - Shadowrocket 通过 `skip-proxy` 与 `tun-excluded-routes` 放行局域网保留网段；Mihomo 通过 `fake-ip-filter` 放行 `+.lan`、`+.local` 与 `rule-set:private`，保证浏览器用 mDNS（`.local`）替代真实内网 IP 时能够正常工作，同时不会把公网 UDP 探测放行到直连路由。
-4. **测漏站点强制走代理闭环**
-   - `rules/custom-proxy.list` 内置 `browserleaks.com`、`ipleak.net`、`whoer.net`、`dnsleaktest.com` 等常见测漏站点，确保访问测漏页与页面内置脚本通信本身均强制经 `🚀 节点选择` / `PROXY` 出口。
+1. **配置内关闭 IPv6。** Mihomo 设置 `ipv6: false` 与 `dns.ipv6: false`，Shadowrocket 设置 `ipv6 = false` 与 `prefer-ipv6 = false`。浏览器仍可能在操作系统层收集本地地址候选。
+2. **按目标分流 STUN/TURN。** 常见境外 STUN 域名列在 `custom-proxy` 中。其他目标按域名或已知 IP 匹配，命中直连规则的国内 STUN 可以直接通信。
+3. **按客户端配置处理局域网。** Shadowrocket 通过 `skip-proxy` 与 `tun-excluded-routes` 设置局域网例外。Mihomo 的 `fake-ip-filter` 对 `+.lan`、`+.local` 与 `rule-set:private` 使用真实地址。
+4. **分别验证测漏页面与 STUN。** `rules/custom-proxy.list` 列出常见测漏站点。页面的 HTTP 出口和它发起的 STUN 探测应分别核对。
 
 ### 3.3 外部 RTC 防护的工程边界与可选加固建议
 
@@ -217,7 +214,7 @@ flowchart TD
 | 边界场景 | 现状说明 | 可选加固方式 |
 | :--- | :--- | :--- |
 | **桌面端未开 TUN 模式（仅开系统代理）** | 浏览器 WebRTC UDP STUN 包不经过 HTTP/SOCKS 代理端口，会直连公网泄露真实 IP | 在 Clash Party / FlClash 中**务必开启 TUN 模式** |
-| **机场节点不支持 UDP 转发** | 若节点丢弃 UDP 或客户端自动回落，外部 STUN 探测可能超时或出现异常行为 | 选用支持 UDP 的节点，或在浏览器禁用非代理 UDP |
+| **机场节点不支持 UDP 转发** | Mihomo 规则模式会拒绝匹配到代理规则且没有可用 UDP 出口的流量 | 需要 UDP 的应用应选用支持 UDP 的节点 |
 | **网页指定国内 STUN 服务器** | 本项目 `custom-reject.list` 目前未拦截 STUN 域名或 `3478`/`19302` 端口；若对端使用国内 IP 的 STUN，会命中 `cn_ip` / `GEOIP,CN` 走 `DIRECT` | 如需“零暴露”（连国内 STUN 也禁止），可在浏览器限制 WebRTC（如关闭 `WebRTC IP Handling` / 安装防泄露扩展）或在 `custom-reject.list` 中补充屏蔽常见 STUN 域名 |
 
 ---
@@ -227,4 +224,4 @@ flowchart TD
 `proxy-ruleset` 通过 **“构建期严格标准化与冲突检测 + 运行时零节点假设的 4 策略组 + Fake-IP / 四层 DoH / `no-resolve` / Sniffer / 禁 IPv6”**，在换机场订阅零改动的条件下，将所有本应走代理的域名解析与外部网络连接统一收口到代理隧道中：
 - **对规则**：单一源维护、CI 自动校验去重编译为 `.mrs` 与轻量 `.list`，兼顾桌面端高性能与 iOS 端低内存。
 - **对 DNS 泄露**：通过 Fake-IP 隔离、境外 DoH 显式绑定 `#策略组`、禁止系统 DNS 回落与 `no-resolve` 阻断提前解析，实现全链路不接触本地运营商 DNS。
-- **对外部 RTC 泄露**：在 TUN 全局接管（含 Shadowrocket）的前提下，通过禁用 IPv6、仅放行私有网段、未知公网 UDP 兜底走代理节点转发，避免真实宽带 IPv4/IPv6 通过 STUN 探测泄露。
+- **对外部 RTC 泄露**：Mihomo 在规则模式下会拒绝由 TUN 接管且需要代理但所选节点不支持的 UDP 流量。直连规则、TUN 接管范围和浏览器的候选地址策略都会影响测漏结果。

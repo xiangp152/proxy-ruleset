@@ -194,11 +194,15 @@ function main(config) {
     "RULE-SET,custom_direct_ip,🎯 全球直连,no-resolve",
     "RULE-SET,private,🎯 全球直连",
     "RULE-SET,custom_reject,🛑 广告拦截",
+    // 节点不支持 UDP 时，Mihomo 会继续匹配，须在国内直连规则前拒绝。
     "RULE-SET,custom_ai,🤖 AI 专用",
+    "RULE-SET,custom_ai,REJECT",
     "RULE-SET,custom_proxy,🚀 节点选择",
+    "RULE-SET,custom_proxy,REJECT",
     "RULE-SET,cn_domain,🎯 全球直连",
     "RULE-SET,cn_ip,🎯 全球直连,no-resolve",
     "MATCH,🚀 节点选择",
+    "MATCH,REJECT",
   ];
 
   return config;

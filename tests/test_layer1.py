@@ -23,10 +23,13 @@ EXPECTED_RULE_ORDER = [
     "RULE-SET,private,🎯 全球直连",
     "RULE-SET,custom_reject,🛑 广告拦截",
     "RULE-SET,custom_ai,🤖 AI 专用",
+    "RULE-SET,custom_ai,REJECT",
     "RULE-SET,custom_proxy,🚀 节点选择",
+    "RULE-SET,custom_proxy,REJECT",
     "RULE-SET,cn_domain,🎯 全球直连",
     "RULE-SET,cn_ip,🎯 全球直连,no-resolve",
     "MATCH,🚀 节点选择",
+    "MATCH,REJECT",
 ]
 
 REQUIRED_PRIVATE_CIDRS = {
