@@ -87,7 +87,7 @@ function main(config) {
       format: "mrs",
       url: `${CDN_BASE}/mihomo/custom-direct.mrs`,
       path: "./ruleset/custom-direct.mrs",
-      interval: 3600,
+      interval: 600,
     },
     custom_direct_ip: {
       type: "http",
@@ -95,7 +95,7 @@ function main(config) {
       format: "mrs",
       url: `${CDN_BASE}/mihomo/custom-direct-ip.mrs`,
       path: "./ruleset/custom-direct-ip.mrs",
-      interval: 3600,
+      interval: 600,
     },
     custom_proxy: {
       type: "http",
@@ -103,7 +103,7 @@ function main(config) {
       format: "mrs",
       url: `${CDN_BASE}/mihomo/custom-proxy.mrs`,
       path: "./ruleset/custom-proxy.mrs",
-      interval: 3600,
+      interval: 600,
     },
     custom_ai: {
       type: "http",
@@ -111,7 +111,7 @@ function main(config) {
       format: "mrs",
       url: `${CDN_BASE}/mihomo/custom-ai.mrs`,
       path: "./ruleset/custom-ai.mrs",
-      interval: 3600,
+      interval: 600,
     },
     custom_reject: {
       type: "http",
@@ -119,7 +119,7 @@ function main(config) {
       format: "mrs",
       url: `${CDN_BASE}/mihomo/custom-reject.mrs`,
       path: "./ruleset/custom-reject.mrs",
-      interval: 3600,
+      interval: 600,
     },
     private: {
       type: "http",

@@ -72,7 +72,7 @@ rule-providers:
     format: mrs
     url: "https://cdn.jsdelivr.net/gh/xiangp152/proxy-ruleset@dist/mihomo/custom-direct.mrs"
     path: ./ruleset/custom-direct.mrs
-    interval: 3600
+    interval: 600
 
   custom_direct_ip:
     type: http
@@ -80,7 +80,7 @@ rule-providers:
     format: mrs
     url: "https://cdn.jsdelivr.net/gh/xiangp152/proxy-ruleset@dist/mihomo/custom-direct-ip.mrs"
     path: ./ruleset/custom-direct-ip.mrs
-    interval: 3600
+    interval: 600
 
   custom_proxy:
     type: http
@@ -88,7 +88,7 @@ rule-providers:
     format: mrs
     url: "https://cdn.jsdelivr.net/gh/xiangp152/proxy-ruleset@dist/mihomo/custom-proxy.mrs"
     path: ./ruleset/custom-proxy.mrs
-    interval: 3600
+    interval: 600
 
   custom_ai:
     type: http
@@ -96,7 +96,7 @@ rule-providers:
     format: mrs
     url: "https://cdn.jsdelivr.net/gh/xiangp152/proxy-ruleset@dist/mihomo/custom-ai.mrs"
     path: ./ruleset/custom-ai.mrs
-    interval: 3600
+    interval: 600
 
   custom_reject:
     type: http
@@ -104,7 +104,7 @@ rule-providers:
     format: mrs
     url: "https://cdn.jsdelivr.net/gh/xiangp152/proxy-ruleset@dist/mihomo/custom-reject.mrs"
     path: ./ruleset/custom-reject.mrs
-    interval: 3600
+    interval: 600
 
   private:
     type: http

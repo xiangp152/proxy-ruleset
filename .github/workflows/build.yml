@@ -80,3 +80,25 @@ jobs:
           publish_dir: ./dist
           force_orphan: true
           commit_message: "chore: build rulesets (${{ github.sha }})"
+
+      - name: Purge jsDelivr CDN cache
+        if: github.event_name != 'pull_request'
+        run: |
+          for f in \
+            manifest.json \
+            override/mihomo-override.js \
+            templates/mihomo-base.yaml \
+            shadowrocket/shadowrocket.conf \
+            mihomo/custom-direct.mrs \
+            mihomo/custom-direct-ip.mrs \
+            mihomo/custom-proxy.mrs \
+            mihomo/custom-ai.mrs \
+            mihomo/custom-reject.mrs \
+            shadowrocket/custom-direct.list \
+            shadowrocket/custom-direct-ip.list \
+            shadowrocket/custom-proxy.list \
+            shadowrocket/custom-ai.list \
+            shadowrocket/custom-reject.list \
+            shadowrocket/private.list; do
+            curl -fsS "https://purge.jsdelivr.net/gh/${{ github.repository }}@dist/${f}" >/dev/null || true
+          done
