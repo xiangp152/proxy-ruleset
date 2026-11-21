@@ -1,0 +1,184 @@
+# 通用 Mihomo 配置模板（适用于不支持 JS 覆写的纯内核/CMFA 场景）
+# 使用方式：仅需将 proxy-providers.MySub.url 替换为你的机场订阅链接即可。
+
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: info
+ipv6: false
+unified-delay: true
+tcp-concurrent: true
+
+profile:
+  store-selected: true
+  store-fake-ip: true
+
+sniffer:
+  enable: true
+  force-dns-mapping: true
+  parse-pure-ip: true
+  override-destination: true
+  sniff:
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: true
+    TLS:
+      ports: [443, 8443]
+    QUIC:
+      ports: [443, 8443]
+  skip-domain:
+    - "Mijia Cloud"
+    - "+.push.apple.com"
+
+proxy-providers:
+  MySub:
+    type: http
+    url: "https://example.com/your-subscription-url"
+    path: ./proxies/mysub.yaml
+    interval: 3600
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 300
+
+proxy-groups:
+  - name: "🚀 节点选择"
+    type: select
+    use:
+      - MySub
+
+  - name: "🤖 AI 专用"
+    type: select
+    proxies:
+      - "🚀 节点选择"
+    use:
+      - MySub
+
+  - name: "🎯 全球直连"
+    type: select
+    proxies:
+      - DIRECT
+
+  - name: "🛑 广告拦截"
+    type: select
+    proxies:
+      - REJECT
+      - DIRECT
+
+rule-providers:
+  custom_direct:
+    type: http
+    behavior: domain
+    format: mrs
+    url: "https://cdn.jsdelivr.net/gh/xiangp152/proxy-ruleset@dist/mihomo/custom-direct.mrs"
+    path: ./ruleset/custom-direct.mrs
+    interval: 3600
+
+  custom_direct_ip:
+    type: http
+    behavior: ipcidr
+    format: mrs
+    url: "https://cdn.jsdelivr.net/gh/xiangp152/proxy-ruleset@dist/mihomo/custom-direct-ip.mrs"
+    path: ./ruleset/custom-direct-ip.mrs
+    interval: 3600
+
+  custom_proxy:
+    type: http
+    behavior: domain
+    format: mrs
+    url: "https://cdn.jsdelivr.net/gh/xiangp152/proxy-ruleset@dist/mihomo/custom-proxy.mrs"
+    path: ./ruleset/custom-proxy.mrs
+    interval: 3600
+
+  custom_ai:
+    type: http
+    behavior: domain
+    format: mrs
+    url: "https://cdn.jsdelivr.net/gh/xiangp152/proxy-ruleset@dist/mihomo/custom-ai.mrs"
+    path: ./ruleset/custom-ai.mrs
+    interval: 3600
+
+  custom_reject:
+    type: http
+    behavior: domain
+    format: mrs
+    url: "https://cdn.jsdelivr.net/gh/xiangp152/proxy-ruleset@dist/mihomo/custom-reject.mrs"
+    path: ./ruleset/custom-reject.mrs
+    interval: 3600
+
+  private:
+    type: http
+    behavior: domain
+    format: mrs
+    url: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/private.mrs"
+    path: ./ruleset/private.mrs
+    interval: 86400
+
+  cn_domain:
+    type: http
+    behavior: domain
+    format: mrs
+    url: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.mrs"
+    path: ./ruleset/cn_domain.mrs
+    interval: 86400
+
+  cn_ip:
+    type: http
+    behavior: ipcidr
+    format: mrs
+    url: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/cn.mrs"
+    path: ./ruleset/cn_ip.mrs
+    interval: 86400
+
+dns:
+  enable: true
+  listen: 0.0.0.0:1053
+  ipv6: false
+  respect-rules: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - "+.lan"
+    - "+.local"
+    - "localhost.ptlogin2.qq.com"
+    - "rule-set:private"
+    - "rule-set:custom_direct"
+  default-nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+  proxy-server-nameserver:
+    - https://dns.alidns.com/dns-query
+    - https://doh.pub/dns-query
+  direct-nameserver:
+    - https://dns.alidns.com/dns-query
+    - https://doh.pub/dns-query
+  nameserver:
+    - "https://cloudflare-dns.com/dns-query#🚀 节点选择"
+    - "https://dns.google/dns-query#🚀 节点选择"
+  nameserver-policy:
+    "rule-set:private":
+      - https://dns.alidns.com/dns-query
+      - https://doh.pub/dns-query
+    "rule-set:custom_direct":
+      - https://dns.alidns.com/dns-query
+      - https://doh.pub/dns-query
+    "rule-set:cn_domain":
+      - https://dns.alidns.com/dns-query
+      - https://doh.pub/dns-query
+    "rule-set:custom_ai":
+      - "https://cloudflare-dns.com/dns-query#🤖 AI 专用"
+      - "https://dns.google/dns-query#🤖 AI 专用"
+    "rule-set:custom_proxy":
+      - "https://cloudflare-dns.com/dns-query#🚀 节点选择"
+      - "https://dns.google/dns-query#🚀 节点选择"
+
+rules:
+  - RULE-SET,custom_direct,🎯 全球直连
+  - RULE-SET,custom_direct_ip,🎯 全球直连,no-resolve
+  - RULE-SET,private,🎯 全球直连
+  - RULE-SET,custom_reject,🛑 广告拦截
+  - RULE-SET,custom_ai,🤖 AI 专用
+  - RULE-SET,custom_proxy,🚀 节点选择
+  - RULE-SET,cn_domain,🎯 全球直连
+  - RULE-SET,cn_ip,🎯 全球直连,no-resolve
+  - MATCH,🚀 节点选择

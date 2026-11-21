@@ -1,0 +1,5 @@
+# 自定义广告与遥测拦截域名（默认走 🛑 广告拦截，可在面板一键临时切为 DIRECT）
+DOMAIN-SUFFIX,doubleclick.net
+DOMAIN-SUFFIX,googlesyndication.com
+DOMAIN-SUFFIX,googleadservices.com
+DOMAIN-SUFFIX,app-measurement.com

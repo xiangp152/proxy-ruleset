@@ -1,0 +1,82 @@
+name: Build and Publish Rulesets
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+    branches:
+      - master
+      - main
+  schedule:
+    # 每天 UTC 02:00 (北京时间 10:00) 自动拉取上游更新并重新编译
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Python dependencies
+        run: pip install pyyaml
+
+      - name: Check JS override syntax
+        run: node --check override/mihomo-override.js
+
+      - name: Check YAML template syntax
+        run: python3 -c "import yaml; yaml.safe_load(open('templates/mihomo-base.yaml')); yaml.safe_load(open('sources.yaml'))"
+
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Download Mihomo binary
+        run: |
+          DOWNLOAD_URL=$(curl -fsSL https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | python3 -c "
+          import sys, json
+          release = json.load(sys.stdin)
+          assets = release.get('assets', [])
+          for pattern in ('linux-amd64-compatible-', 'linux-amd64-v1-', 'linux-amd64-v'):
+              for a in assets:
+                  name = a['name']
+                  if name.startswith('mihomo-' + pattern) and name.endswith('.gz') and 'go12' not in name:
+                      print(a['browser_download_url'])
+                      sys.exit(0)
+          sys.exit('No matching mihomo linux-amd64 asset found')
+          ")
+          echo "Downloading ${DOWNLOAD_URL}..."
+          curl -fsSL "${DOWNLOAD_URL}" -o mihomo.gz
+          gunzip -f mihomo.gz
+          chmod +x mihomo
+          sudo mv mihomo /usr/local/bin/mihomo
+          mihomo -v
+
+      - name: Build Mihomo (.mrs) and Shadowrocket (.list/.conf) artifacts
+        run: python3 scripts/build.py --require-mrs
+
+      - name: Deploy dist branch
+        if: github.event_name != 'pull_request'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: dist
+          publish_dir: ./dist
+          force_orphan: true
+          commit_message: "chore: build rulesets (${{ github.sha }})"

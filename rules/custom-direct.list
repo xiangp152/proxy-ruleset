@@ -1,0 +1,5 @@
+# 自定义强制直连域名（最高优先级，支持 DOMAIN-SUFFIX / DOMAIN / +.domain / domain）
+# 适合放：误被代理的国内站点、公司内网后缀、NAS 域名、网银等
+DOMAIN-SUFFIX,local
+DOMAIN-SUFFIX,lan
+DOMAIN-SUFFIX,home.arpa

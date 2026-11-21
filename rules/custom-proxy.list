@@ -1,0 +1,22 @@
+# 自定义强制代理域名（优先级高于国内域名/IP，确保测漏站与易误判境外站点必走代理）
+# 1. 代理与 DNS 泄露检测站
+DOMAIN-SUFFIX,ipleak.net
+DOMAIN-SUFFIX,dnsleaktest.com
+DOMAIN-SUFFIX,browserleaks.com
+DOMAIN-SUFFIX,whoer.net
+DOMAIN-SUFFIX,ipinfo.io
+DOMAIN-SUFFIX,ip.sb
+DOMAIN-SUFFIX,ifconfig.me
+DOMAIN-SUFFIX,ipapi.co
+DOMAIN-SUFFIX,ipify.org
+DOMAIN-SUFFIX,whatismyipaddress.com
+DOMAIN,checkip.amazonaws.com
+
+# 2. 常用开发与通讯域名（避免部分规则误判直连）
+DOMAIN-SUFFIX,github.com
+DOMAIN-SUFFIX,githubusercontent.com
+DOMAIN-SUFFIX,githubassets.com
+DOMAIN-SUFFIX,ghcr.io
+DOMAIN-SUFFIX,telegram.org
+DOMAIN-SUFFIX,t.me
+DOMAIN-SUFFIX,tdesktop.com

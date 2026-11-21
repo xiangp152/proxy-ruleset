@@ -1,0 +1,40 @@
+# 外部上游规则源与构建清单
+# 修改本文件后，GitHub Actions 会自动拉取合并并重新编译 .mrs 与 Shadowrocket .list
+
+repo: xiangp152/proxy-ruleset
+dist_branch: dist
+cdn_base: https://cdn.jsdelivr.net/gh/xiangp152/proxy-ruleset@dist
+
+# 本地静态规则与外部源的聚合编译映射
+bundles:
+  - name: custom-direct
+    behavior: domain
+    local: rules/custom-direct.list
+    upstream: []
+
+  - name: custom-direct-ip
+    behavior: ipcidr
+    local: rules/custom-direct-ip.list
+    upstream: []
+
+  - name: custom-proxy
+    behavior: domain
+    local: rules/custom-proxy.list
+    upstream: []
+
+  - name: custom-ai
+    behavior: domain
+    local: rules/custom-ai.list
+    upstream:
+      - https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-ai-!cn.list
+
+  - name: custom-reject
+    behavior: domain
+    local: rules/custom-reject.list
+    upstream: []
+
+  - name: private
+    behavior: domain
+    local: null
+    upstream:
+      - https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/private.list
