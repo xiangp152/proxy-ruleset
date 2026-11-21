@@ -62,7 +62,29 @@ flowchart TD
 - **Shadowrocket 端**：输出纯文本 `.list`（`dist/shadowrocket/*.list`）并连同 `templates/shadowrocket.conf` 一并发布。
 - **自动发布**：每次 `master`/`main` 分支更新及每日 UTC 02:00（北京时间 10:00）定时任务构建后，强制推送产物到 `dist` 分支，客户端通过 `cdn.jsdelivr.net` 定期拉取热更新。
 
-### 1.3 客户端运行时接入与规则匹配顺序
+### 1.3 什么是 `.mrs` 格式？为什么 Mihomo 端选用它？
+
+**`.mrs`**（Mihomo Rule-Set，自 Mihomo v1.18.7 起引入）是 Mihomo 内核专属的**二进制规则集格式**，用于替代传统的纯文本 `.yaml` / `.list` 规则集。
+
+- **底层结构与性能优势**：
+  - 文件以 `MRSv1` 为魔数头标识并采用 `zstd` 压缩，内部直接序列化了预构建好的**域名匹配树（Domain Trie）**或 **IPv4/IPv6 CIDR 匹配结构**。
+  - 客户端下载后无需再像纯文本规则集那样逐行解析文本并现场重建索引，因此文件体积显著更小，加载速度可达毫秒级，同时内存占用更低。
+- **使用限制与格式边界**：
+  - **仅支持 `domain` 与 `ipcidr` 两种 `behavior`**：不支持 `classical` 规则（如 `DOMAIN-KEYWORD`、`DOMAIN-REGEX`、`PROCESS-NAME` 等），这也是 `scripts/build.py` 在构建阶段提前拦截不支持语法的直接原因。
+  - **空集合限制**：`ipcidr` 类型的 `.mrs` 不允许为空（0 条规则在 Mihomo 加载时会报错），因此 `rules/custom-direct-ip.list` 至少需保留基础私有网段。
+  - **内核专属**：`.mrs` 仅适用于 Mihomo（Clash.Meta）内核及其衍生客户端，与 sing-box 的 `.srs` 二进制规则集不互通。
+- **编译与反编译命令**：
+  - 可直接通过官方 `mihomo` 可执行文件在文本规则与 `.mrs` 之间互转：
+    ```bash
+    # 将纯文本编译为 .mrs（CI 构建流水线使用此方式）
+    mihomo convert-ruleset <domain|ipcidr> text input.txt output.mrs
+
+    # 将 .mrs 反编译回纯文本列表用于排查
+    mihomo convert-ruleset <domain|ipcidr> mrs input.mrs output.list
+    ```
+  - 在配置中引用时，`rule-providers` 需显式指定 `format: mrs` 与对应的 `behavior`（`domain` 或 `ipcidr`）。
+
+### 1.4 客户端运行时接入与规则匹配顺序
 
 在运行时（`override/mihomo-override.js`、`templates/mihomo-base.yaml`、`templates/shadowrocket.conf`）：
 1. **零节点命名假设与极简策略组**：Mihomo JS 覆写脚本仅通过正则 `INFO_NODE_RE` 过滤机场的流量/到期提示假节点，将剩余全量真实节点动态注入 `🚀 节点选择` 与 `🤖 AI 专用`（后者默认第 1 项跟随 `🚀 节点选择`），不依赖任何节点地区关键词；Shadowrocket 通过 `policy-regex-filter=.*` 实现同等效果。
