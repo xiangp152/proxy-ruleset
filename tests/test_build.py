@@ -68,6 +68,8 @@ class BuildTests(unittest.TestCase):
         self.assertIn("custom-direct", manifest["bundles"])
         self.assertIn("custom-proxy", manifest["bundles"])
         self.assertIn("custom-ai", manifest["bundles"])
+        proxy_sr = (dist / "shadowrocket" / "custom-proxy.list").read_text(encoding="utf-8")
+        self.assertIn("DOMAIN,stun.voip.blackberry.com", proxy_sr)
 
 
 if __name__ == "__main__":

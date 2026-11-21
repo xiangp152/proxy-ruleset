@@ -20,3 +20,16 @@ DOMAIN-SUFFIX,ghcr.io
 DOMAIN-SUFFIX,telegram.org
 DOMAIN-SUFFIX,t.me
 DOMAIN-SUFFIX,tdesktop.com
+
+# 3. 公共 STUN / WebRTC 探测域名（避免被上游 geosite:cn 中的 +.blackberry.com 等规则误判直连导致 WebRTC 泄露）
+DOMAIN,stun.voip.blackberry.com
+DOMAIN-SUFFIX,l.google.com
+DOMAIN,global.stun.twilio.com
+DOMAIN,stun.cloudflare.com
+DOMAIN,stun.services.mozilla.com
+DOMAIN,stun.stunprotocol.org
+DOMAIN,stun.nextcloud.com
+DOMAIN,stun.sipgate.net
+DOMAIN,stun.ekiga.net
+DOMAIN,stun.xten.com
+DOMAIN,numb.viagenie.ca
