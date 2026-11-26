@@ -4,6 +4,30 @@
 // 2. 极简 4 策略组：🚀 节点选择 / 🤖 AI 专用 / 🎯 全球直连 / 🛑 广告拦截
 // 3. 防泄露 DNS：fake-ip + respect-rules + 四层隔离 + 关闭默认 IPv6 + Sniffer
 
+// 个人直连配置。在客户端导入的本地副本里填写，去掉需要使用的示例行前的 //。
+const LOCAL_DIRECT = {
+  // 标准 Mihomo 规则，优先匹配。域名规则沿用现有 DNS 配置。
+  rules: [
+    // "DOMAIN,git.corp.example.com,DIRECT",                    // 只匹配这个域名
+    // "DOMAIN-SUFFIX,corp.example.com,DIRECT",                 // 域名本身和所有下级子域
+    // "DOMAIN-WILDCARD,dev-*.corp.example.com,DIRECT",         // 按 * 或 ? 匹配域名
+    // "IP-CIDR,10.20.0.15/32,DIRECT,no-resolve",                // 单个 IPv4 地址
+    // "IP-CIDR,10.30.0.0/16,DIRECT,no-resolve",                 // IPv4 网段
+    // "IP-CIDR6,fd00:1234::/48,DIRECT,no-resolve",              // IPv6 网段
+  ],
+  // 固定 IP 映射，同时直连。Mihomo 本地应答地址查询，不向上游查询。
+  hosts: {
+    // "git.corp.example.com": "10.20.0.15",   // 精确域名
+    // "*.dev.corp.example.com": "10.20.0.16", // 仅匹配一级子域
+    // "+.lab.corp.example.com": "10.20.0.17", // 域名本身和所有下级子域
+  },
+  // IP 直连的简写，支持单个地址和 CIDR 网段。
+  ips: [
+    // "10.20.0.15",
+    // "10.30.0.0/16",
+  ],
+};
+
 const CDN_BASE = "https://cdn.jsdelivr.net/gh/xiangp152/proxy-ruleset@dist";
 const META_BASE = "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo";
 
@@ -19,6 +43,19 @@ function main(config) {
   if (proxyNames.length === 0 && providerNames.length === 0) {
     return config;
   }
+
+  const localDomains = Object.keys(LOCAL_DIRECT.hosts || {});
+  const localExactDomains = [];
+  const localDomainPatterns = [];
+  for (const domain of localDomains) {
+    const isPattern = domain.startsWith("+.") || domain.startsWith(".") || domain.includes("*");
+    (isPattern ? localDomainPatterns : localExactDomains).push(domain);
+  }
+  const localCidrs = (LOCAL_DIRECT.ips || []).map((ip) => {
+    if (ip.includes("/")) return ip;
+    const prefixLength = ip.includes(":") ? 128 : 32;
+    return `${ip}/${prefixLength}`;
+  });
 
   // 1. 构建极简 4 策略组（若通过 proxy-providers 导入节点则自动绑定 use）
   const mainGroup = {
@@ -76,8 +113,11 @@ function main(config) {
       TLS: { ports: [443, 8443] },
       QUIC: { ports: [443, 8443] },
     },
-    "skip-domain": ["Mijia Cloud", "+.push.apple.com"],
+    "skip-domain": ["Mijia Cloud", "+.push.apple.com", ...localDomains],
   };
+  if (localCidrs.length) {
+    config.sniffer["skip-dst-address"] = localCidrs;
+  }
 
   // 4. 规则集定义（全面采用 .mrs 二进制规则集，毫秒级加载）
   config["rule-providers"] = {
@@ -146,6 +186,14 @@ function main(config) {
       interval: 86400,
     },
   };
+  if (localDomainPatterns.length) {
+    // 使用 Mihomo 的域名集合，让路由和 hosts 使用相同的 Clash 通配符。
+    config["rule-providers"].local_direct_hosts = {
+      type: "inline",
+      behavior: "domain",
+      payload: localDomainPatterns,
+    };
+  }
 
   // 5. 防泄露 DNS（与上面的 rule-providers 严格联动）
   const domesticDoH = [
@@ -161,6 +209,9 @@ function main(config) {
     "https://dns.google/dns-query#🤖 AI 专用",
   ];
 
+  if (localDomains.length) {
+    config.hosts = { ...config.hosts, ...LOCAL_DIRECT.hosts };
+  }
   config["dns"] = {
     enable: true,
     listen: "0.0.0.0:1053",
@@ -169,6 +220,7 @@ function main(config) {
     "enhanced-mode": "fake-ip",
     "fake-ip-range": "198.18.0.1/16",
     "fake-ip-filter": [
+      ...localDomains,
       "+.lan",
       "+.local",
       "localhost.ptlogin2.qq.com",
@@ -180,6 +232,8 @@ function main(config) {
     "direct-nameserver": domesticDoH,
     nameserver: proxyDoH,
     "nameserver-policy": {
+      // hosts 回答地址查询，其余查询类型直接返回空结果，避免转发公司域名。
+      ...Object.fromEntries(localDomains.map((domain) => [domain, "rcode://success"])),
       "rule-set:private": domesticDoH,
       "rule-set:custom_direct": domesticDoH,
       "rule-set:cn_domain": domesticDoH,
@@ -190,6 +244,13 @@ function main(config) {
 
   // 6. 重写路由规则（IP 类规则统一加 no-resolve，避免提前触发本地 DNS 解析）
   config["rules"] = [
+    ...(LOCAL_DIRECT.rules || []),
+    ...localExactDomains.map((domain) => `DOMAIN,${domain},DIRECT`),
+    ...(localDomainPatterns.length ? ["RULE-SET,local_direct_hosts,DIRECT"] : []),
+    ...localCidrs.map((cidr) => {
+      const type = cidr.includes(":") ? "IP-CIDR6" : "IP-CIDR";
+      return `${type},${cidr},DIRECT,no-resolve`;
+    }),
     "RULE-SET,custom_direct,🎯 全球直连",
     "RULE-SET,custom_direct_ip,🎯 全球直连,no-resolve",
     "RULE-SET,private,🎯 全球直连",

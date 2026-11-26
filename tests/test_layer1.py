@@ -59,7 +59,9 @@ EXPECTED_LEAK_CHECK_DOMAINS = [
 ]
 
 
-def run_js_override(mock_config: dict[str, Any]) -> dict[str, Any]:
+def run_js_override(
+    mock_config: dict[str, Any], local_direct: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Execute override/mihomo-override.js::main(config) inside Node.js vm."""
     node_bin = shutil.which("node")
     if not node_bin:
@@ -73,11 +75,19 @@ def run_js_override(mock_config: dict[str, Any]) -> dict[str, Any]:
         "const input = JSON.parse(process.argv[2]);\n"
         "const ctx = vm.createContext({});\n"
         "vm.runInContext(code, ctx);\n"
+        "vm.runInContext('Object.assign(LOCAL_DIRECT, ' + process.argv[3] + ')', ctx);\n"
         "const out = ctx.main(input);\n"
         "process.stdout.write(JSON.stringify(out));\n"
     )
     proc = subprocess.run(
-        [node_bin, "-e", runner, str(override_path), json.dumps(mock_config)],
+        [
+            node_bin,
+            "-e",
+            runner,
+            str(override_path),
+            json.dumps(mock_config),
+            json.dumps(local_direct or {}),
+        ],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -147,6 +157,68 @@ class OverrideScriptTests(unittest.TestCase):
         raw = {"proxies": [], "rules": ["MATCH,DIRECT"]}
         out = run_js_override(raw)
         self.assertEqual(out, raw)
+
+    def test_local_direct_hosts_and_ips_precede_shared_rules(self) -> None:
+        domain = "git.corp.example.com"
+        existing = "nas.home.arpa"
+        out = run_js_override(
+            {
+                "proxies": [{"name": "Node-1"}],
+                "hosts": {domain: "10.20.0.99", existing: "192.168.1.10"},
+            },
+            {
+                "hosts": {domain: "10.20.0.15"},
+                "ips": ["10.20.0.15", "10.30.0.0/16", "fd00::15"],
+            },
+        )
+        self.assertEqual(out["hosts"], {domain: "10.20.0.15", existing: "192.168.1.10"})
+        self.assertEqual(
+            out["rules"],
+            [
+                f"DOMAIN,{domain},DIRECT",
+                "IP-CIDR,10.20.0.15/32,DIRECT,no-resolve",
+                "IP-CIDR,10.30.0.0/16,DIRECT,no-resolve",
+                "IP-CIDR6,fd00::15/128,DIRECT,no-resolve",
+                *EXPECTED_RULE_ORDER,
+            ],
+        )
+        self.assertEqual(out["dns"]["fake-ip-filter"][0], domain)
+        policy = out["dns"]["nameserver-policy"]
+        self.assertEqual(next(iter(policy)), domain)
+        self.assertEqual(policy[domain], "rcode://success")
+        self.assertIn(domain, out["sniffer"]["skip-domain"])
+        self.assertEqual(
+            out["sniffer"]["skip-dst-address"],
+            ["10.20.0.15/32", "10.30.0.0/16", "fd00::15/128"],
+        )
+
+    def test_local_direct_accepts_standard_rules_and_hosts_wildcards(self) -> None:
+        rules = [
+            "DOMAIN,printer.example.com,DIRECT",
+            "DOMAIN-SUFFIX,corp.example.com,DIRECT",
+            "DOMAIN-WILDCARD,dev-*.corp.example.com,DIRECT",
+            "IP-CIDR,10.30.0.0/16,DIRECT,no-resolve",
+        ]
+        hosts = {
+            "*.dev.corp.example.com": "10.20.0.16",
+            "+.lab.corp.example.com": "10.20.0.17",
+        }
+        out = run_js_override({"proxies": [{"name": "Node-1"}]}, {"rules": rules, "hosts": hosts})
+        self.assertEqual(
+            out["rules"],
+            [*rules, "RULE-SET,local_direct_hosts,DIRECT", *EXPECTED_RULE_ORDER],
+        )
+        self.assertEqual(out["hosts"], hosts)
+        self.assertEqual(
+            out["rule-providers"]["local_direct_hosts"],
+            {"type": "inline", "behavior": "domain", "payload": list(hosts)},
+        )
+        policy = out["dns"]["nameserver-policy"]
+        self.assertEqual(list(policy)[: len(hosts)], list(hosts))
+        for pattern in hosts:
+            self.assertEqual(policy[pattern], "rcode://success")
+            self.assertIn(pattern, out["dns"]["fake-ip-filter"])
+        self.assertNotIn("printer.example.com", policy)
 
     def test_info_nodes_filtered_with_fallback(self) -> None:
         cfg = {
