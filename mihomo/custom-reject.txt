@@ -1,0 +1,4 @@
++.app-measurement.com
++.doubleclick.net
++.googleadservices.com
++.googlesyndication.com

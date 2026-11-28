@@ -1,0 +1,29 @@
+{
+  "mrs_compiled": true,
+  "bundles": {
+    "custom-direct": {
+      "behavior": "domain",
+      "count": 3
+    },
+    "custom-direct-ip": {
+      "behavior": "ipcidr",
+      "count": 9
+    },
+    "custom-proxy": {
+      "behavior": "domain",
+      "count": 29
+    },
+    "custom-ai": {
+      "behavior": "domain",
+      "count": 219
+    },
+    "custom-reject": {
+      "behavior": "domain",
+      "count": 4
+    },
+    "private": {
+      "behavior": "domain",
+      "count": 132
+    }
+  }
+}
